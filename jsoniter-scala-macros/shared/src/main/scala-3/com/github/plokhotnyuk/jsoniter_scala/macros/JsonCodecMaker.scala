@@ -2807,19 +2807,19 @@ object JsonCodecMaker {
         else cannotFindValueCodecError(tpe)
       }
       //FIXME: generate a type class instance using `ClassDef.apply` and `Symbol.newClass` calls after graduating from experimental API: https://www.scala-lang.org/blog/2022/06/21/scala-3.1.3-released.html
-      val codecDefExpr = '{
-        new JsonValueCodec[A] {
-          def nullValue: A = ${genNullValue[A](rootTpe :: Nil)}
+      // val codecDefExpr = '{
+      //   new JsonValueCodec[A] {
+      //     def nullValue: A = ${genNullValue[A](rootTpe :: Nil)}
 
-          def decodeValue(in: JsonReader, default: A): A =
-            ${genReadVal(rootTpe :: Nil, 'default, cfg.isStringified, false, 'in)}
+      //     def decodeValue(in: JsonReader, default: A): A =
+      //       ${genReadVal(rootTpe :: Nil, 'default, cfg.isStringified, false, 'in)}
 
-          def encodeValue(x: A, out: JsonWriter): Unit =
-            ${genWriteVal('x, rootTpe :: Nil, cfg.isStringified, None, 'out)}
-        }
-      }
+      //     def encodeValue(x: A, out: JsonWriter): Unit =
+      //       ${genWriteVal('x, rootTpe :: Nil, cfg.isStringified, None, 'out)}
+      //   }
+      // }
       
-      val codecDef: Term = codecDefExpr.asTerm
+      // val codecDef: Term = codecDefExpr.asTerm
       
       val needDefs =
         mathContexts.values ++
@@ -2829,13 +2829,17 @@ object JsonCodecMaker {
           fieldIndexAccessors.values ++
           decodeMethodDefs.values ++
           encodeMethodDefs.values // ++ inDefs
-      val codec = Block(needDefs.toList, codecDef).asExprOf[JsonValueCodec[A]]
+      // val codec = Block(needDefs.toList, codecDef).asExprOf[JsonValueCodec[A]]
 
       val className = "$anon()"
       val parents   = List(TypeTree.of[Object], TypeTree.of[JsonValueCodec[A]])
       val decls: List[Symbol] => Symbol => List[Symbol] = memberSymbolsAsSeen[JsonValueCodec[A]]
 
       val cls = Symbol.newClass(Symbol.spliceOwner, className, parents = parents.map(_.tpe), decls(needDefs.toList.map(_.symbol)), selfType = None)
+
+      println(s"cls.declaredFields: ${cls.declaredFields}")
+      println(s"cls.declaredMethods: ${cls.declaredMethods}")
+      // println(s"cls.declarations: ${cls.declaredFields}")
 
       def nvDef: DefDef = {
         val mt = MethodType(Nil)(_ => Nil, _ => TypeRepr.of[A])
@@ -2858,16 +2862,16 @@ object JsonCodecMaker {
 
       def wvDef: DefDef = {
         val mt = MethodType(List("x", "out"))(_ => List(TypeRepr.of[A], TypeRepr.of[JsonWriter]), _ => TypeRepr.of[Unit])
-        val sym = cls.declaredMethod("encodeValue").head.tree.changeOwner(cls).symbol // Symbol.newMethod(Symbol.spliceOwner, "encodeValue", mt) // Symbol.spliceOwner
+        val sym = cls.declaredMethod("encodeValue").head // Symbol.newMethod(Symbol.spliceOwner, "encodeValue", mt) // Symbol.spliceOwner
         val defdef = DefDef(sym, params => {
           val List(List(x, out)) = params
-          Some(genWriteVal(x.asExprOf[A], rootTpe :: Nil, cfg.isStringified, None, out.asExprOf[JsonWriter]).asTerm)
-          // None
+          //Some(genWriteVal(x.asExprOf[A], rootTpe :: Nil, cfg.isStringified, None, out.asExprOf[JsonWriter]).asTerm)
+          None
         })
         defdef // .changeOwner(cls)
       }
 
-      // def inDefs = nvDef :: rvDef :: wvDef :: Nil
+      def inDefs = nvDef :: rvDef :: wvDef :: Nil
 
       println("-------")
       // println(wvDef.show)
@@ -2875,7 +2879,7 @@ object JsonCodecMaker {
       println("-------")
 
       // cls.body
-      val clsDef = ClassDef(cls, parents, body = needDefs.toList) //  ::: inDefs
+      val clsDef = ClassDef(cls, parents, body = needDefs.toList ::: inDefs) //  ::: inDefs
       val newCls = Typed(Apply(Select(New(TypeIdent(cls)), cls.primaryConstructor), Nil), TypeTree.of[JsonValueCodec[A]])
       val expr   = Block(List(clsDef), newCls).asExprOf[JsonValueCodec[A]]
 
@@ -2894,9 +2898,10 @@ object JsonCodecMaker {
 
       if (//FIXME: uncomment after graduating from experimental API: CompilationInfo.XmacroSettings.contains("print-codecs") ||
         Expr.summon[CodecMakerConfig.PrintCodec].isDefined) {
-        report.info(s"Generated JSON codec for type '${rootTpe.show}':\n${codec.show}", Position.ofMacroExpansion)
+        report.info(s"Generated JSON codec for type '${rootTpe.show}':\n${expr.show}", Position.ofMacroExpansion)
       }
-      codec
+      // codec
+      expr
     }
   }
 
@@ -2931,7 +2936,7 @@ object JsonCodecMaker {
           flags = Flags.Method, // method.flags is Flags.Deferred | Flags.Method, we'd like to unset the Deferred flag here
           privateWithin = method.privateWithin.fold(Symbol.noSymbol)(_.typeSymbol)
         )
-      } ::: extra
+      } ::: extra.map(_.tree.changeOwner(clz).symbol)
 
   // https://github.com/lampepfl/dotty/issues/11685
   def definedMethodsInTypeSym(using Quotes): quotes.reflect.Symbol => List[quotes.reflect.Symbol] =
