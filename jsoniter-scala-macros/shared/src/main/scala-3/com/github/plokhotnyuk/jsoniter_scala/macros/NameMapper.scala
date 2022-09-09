@@ -2,6 +2,7 @@ package com.github.plokhotnyuk.jsoniter_scala.macros
 
 import scala.quoted._
 import scala.util._
+import annotation.experimental
 
 sealed trait NameMapper:
   def apply(input: String)(using Quotes): Option[String]
@@ -9,11 +10,13 @@ sealed trait NameMapper:
 class PartialFunctionWrapper(fun: PartialFunction[String, String]) extends NameMapper:
   def apply(input: String)(using Quotes): Option[String] = fun.lift(input)
 
+@experimental
 class ExprPartialFunctionWrapper(fun: Expr[PartialFunction[String, String]]) extends NameMapper:
   def apply(input: String)(using Quotes): Option[String] = CompileTimeEval.evalApplyString(fun, input)
 
 case class FromExprException(name: String, expr: Expr[Any]) extends RuntimeException
 
+@experimental
 object NameMapper {
   inline given Conversion[PartialFunction[String, String], NameMapper] = PartialFunctionWrapper(_)
 
@@ -32,12 +35,14 @@ object NameMapper {
   }
 }
 
+@experimental
 object PartialFunctionWrapper {
   def toExprWrapper(x: Expr[PartialFunctionWrapper])(using Quotes): Option[ExprPartialFunctionWrapper] = x match
     case '{ PartialFunctionWrapper($fun) } => Some(ExprPartialFunctionWrapper(fun))
     case _ => throw new FromExprException("FieldNameExpr", x)
 }
 
+@experimental
 private[macros] object CompileTimeEval {
   case class CompileTimeEvalException(message: String, expr: Expr[Any], reason: Throwable = null)
     extends RuntimeException(message, reason)

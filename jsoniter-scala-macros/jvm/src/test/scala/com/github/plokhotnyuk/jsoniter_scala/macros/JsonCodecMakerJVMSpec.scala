@@ -2,8 +2,9 @@ package com.github.plokhotnyuk.jsoniter_scala.macros
 
 import com.github.plokhotnyuk.jsoniter_scala.core._
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker._
-import scala.annotation.tailrec
+import scala.annotation.{tailrec, experimental}
 
+@experimental
 class JsonCodecMakerJVMSpec extends VerifyingSpec {
   import NamespacePollutions._
 

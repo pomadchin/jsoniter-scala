@@ -29,6 +29,8 @@ TAGS
 .metals
 .bloop
 .vscode/settings.json
+.history
+metals.sbt
 
 # npm
 package-lock.json
