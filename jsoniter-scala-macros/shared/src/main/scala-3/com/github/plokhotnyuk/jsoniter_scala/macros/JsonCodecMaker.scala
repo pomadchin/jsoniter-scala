@@ -749,7 +749,10 @@ object JsonCodecMaker {
         case _ => None
 
       def symbol(name: String, tpe: TypeRepr, flags: Flags = Flags.EmptyFlags): Symbol =
-        Symbol.newVal(Symbol.spliceOwner, name, tpe, flags, Symbol.noSymbol)
+        symbolWithOwner(Symbol.spliceOwner, name, tpe, flags)
+
+      def symbolWithOwner(owner: Symbol, name: String, tpe: TypeRepr, flags: Flags = Flags.EmptyFlags): Symbol =
+        Symbol.newVal(owner, name, tpe, flags, Symbol.noSymbol)
 
       def checkRecursionInTypes(types: List[TypeRepr]): Unit =
         if (!cfg.allowRecursiveTypes) {
@@ -1602,7 +1605,7 @@ object JsonCodecMaker {
         def genReadLeafClass[T: Type](subTpe: TypeRepr)(using Quotes): Expr[T] =
           val useDiscriminator = cfg.discriminatorFieldName.isDefined
           if (subTpe =:= tpe) genReadNonAbstractScalaClass(types, useDiscriminator, in, genNullValue[T](types))
-          else genReadVal(subTpe :: types, genNullValue[T](subTpe :: types), isStringified, useDiscriminator, in)
+          else genReadVal(Symbol.spliceOwner, subTpe :: types, genNullValue[T](subTpe :: types), isStringified, useDiscriminator, in)
 
         def genReadCollisions[T: Type](subTpes: collection.Seq[TypeRepr], l: Expr[Int])(using Quotes): Expr[T] =
           subTpes.foldRight(discriminatorError.asExprOf[T]) { (subTpe, acc) =>
@@ -1797,7 +1800,7 @@ object JsonCodecMaker {
                   case '[ft] =>
                     val tmpVar = Ref(tmpVars(f.symbol.name).symbol)
                     Block(List(checkAndResetFieldPresenceFlag(f.mappedName, l).asTerm),
-                      Assign(tmpVar, genReadVal(f.resolvedTpe :: types, tmpVar.asExprOf[ft], f.isStringified, false, in).asTerm)).asExprOf[Unit]
+                      Assign(tmpVar, genReadVal(Symbol.spliceOwner, f.resolvedTpe :: types, tmpVar.asExprOf[ft], f.isStringified, false, in).asTerm)).asExprOf[Unit]
               }
             '{
               if ($in.isCharBufEqualsTo($l, ${Expr(f.mappedName)})) $readValue
@@ -1889,7 +1892,7 @@ object JsonCodecMaker {
 
       def genReadValForGrowable[G <: Growable[V]: Type, V: Type](types: List[TypeRepr], isStringified: Boolean,
                                                                  x: Expr[G], in: Expr[JsonReader])(using Quotes): Expr[Unit] =
-          '{ $x.addOne(${genReadVal(types, genNullValue[V](types), isStringified, false, in)}) }
+          '{ $x.addOne(${genReadVal(Symbol.spliceOwner, types, genNullValue[V](types), isStringified, false, in)}) }
 
       def genArraysCopyOf[T: Type](tpe: TypeRepr, x: Expr[Array[T]], newLen: Expr[Int])(using Quotes): Expr[Array[T]] =
         if (tpe <:< TypeRepr.of[Boolean]) {
@@ -1912,7 +1915,7 @@ object JsonCodecMaker {
           '{ java.util.Arrays.copyOf(${x.asExprOf[Array[AnyRef & T]]}, $newLen) }.asExprOf[Array[T]]
         } else fail(s"Can't find Arrays.copyOf for ${tpe.show}")
 
-      def genReadVal[T: Type](types: List[TypeRepr], default: Expr[T], isStringified: Boolean,
+      def genReadVal[T: Type](owner: Symbol, types: List[TypeRepr], default: Expr[T], isStringified: Boolean,
                               useDiscriminator: Boolean, in: Expr[JsonReader])(using Quotes): Expr[T] = {
         val tpe = types.head
         if (traceFlag) println(s"genReadVal, tpe=${tpe.show}, useDiscriminator=$useDiscriminator")
@@ -2004,7 +2007,7 @@ object JsonCodecMaker {
           val tpe1 = valueClassValueType(tpe)
           tpe1.asType match
             case '[t1] =>
-              val readVal = genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+              val readVal = genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
               getClassInfo(tpe).genNew(readVal.asTerm).asExprOf[T]
         } else if (isOption(tpe, types.tail)) {
           val tpe1 = typeArg1(tpe)
@@ -2013,7 +2016,7 @@ object JsonCodecMaker {
             else default
           tpe1.asType match
             case '[t1] =>
-              val readVal1 = genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+              val readVal1 = genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
               '{
                 if ($in.isNextToken('n')) $in.readNullOrError($nullValue, "expected value or null")
                 else {
@@ -2048,7 +2051,7 @@ object JsonCodecMaker {
               if (tpe <:< TypeRepr.of[immutable.ArraySeq[_]]) {
                 genReadArray('{ new Array[t1](16)(using $t1ClassTag) },
                   (x, i) => ConditionalAssignmentAndUpdate('{ ($i == $x.length) }, growArray(x, i).asTerm, '{
-                    $x($i) = ${genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)}
+                    $x($i) = ${genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)}
                   }), default.asExprOf[immutable.ArraySeq[t1]], (x, i) => '{
                     immutable.ArraySeq.unsafeWrapArray[t1]({
                       if ($i == $x.length) $x
@@ -2058,7 +2061,7 @@ object JsonCodecMaker {
               } else if (tpe <:< TypeRepr.of[mutable.ArraySeq[_]]) {
                 genReadArray('{ new Array[t1](16)(using $t1ClassTag) },
                   (x, i) => ConditionalAssignmentAndUpdate('{ ($i == $x.length) }, growArray(x, i).asTerm, '{
-                    $x($i) = ${genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)}
+                    $x($i) = ${genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)}
                   }), default.asExprOf[mutable.ArraySeq[t1]], (x, i) => '{
                     mutable.ArraySeq.make[t1]({
                       if ($i == $x.length) $x
@@ -2068,7 +2071,7 @@ object JsonCodecMaker {
               } else {
                 genReadArray('{ new Array[t1](16)(using $t1ClassTag) },
                   (x, i) => ConditionalAssignmentAndUpdate('{ ($i == $x.length) }, growArray(x, i).asTerm, '{
-                    $x($i) = ${genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)}
+                    $x($i) = ${genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)}
                   }), default.asExprOf[Array[t1]], (x, i) => '{
                     if ($i == $x.length) $x
                     else ${shrinkArray(x, i)}
@@ -2079,7 +2082,7 @@ object JsonCodecMaker {
           tpe1.asType match
             case '[t1] =>
               val newBuilder = withNullValueFor(tpe)(scalaCollectionEmptyNoArgs(tpe, tpe1).asExprOf[immutable.IntMap[t1]])
-              val readVal = genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+              val readVal = genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
               if (cfg.mapAsArray) {
                 val readKey =
                   if (cfg.isStringified) '{ $in.readStringAsInt() }
@@ -2099,7 +2102,7 @@ object JsonCodecMaker {
                 if ($tDefault.isEmpty) $tDefault
                 else ${scalaCollectionEmptyNoArgs(tpe, tpe1).asExprOf[mutable.LongMap[t1]]}
               }
-              val readVal = genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+              val readVal = genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
               if (cfg.mapAsArray) {
                 val readKey =
                   if (cfg.isStringified) '{ $in.readStringAsLong() }
@@ -2117,7 +2120,7 @@ object JsonCodecMaker {
           tpe1.asType match
             case '[t1] =>
               val newBuilder = withNullValueFor(tpe)(scalaCollectionEmptyNoArgs(tpe, tpe1).asExprOf[immutable.LongMap[t1]])
-              val readVal = genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+              val readVal = genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
               if (cfg.mapAsArray) {
                 val readKey =
                   if (cfg.isStringified) '{ $in.readStringAsLong() }
@@ -2141,10 +2144,10 @@ object JsonCodecMaker {
               }.asExprOf[T & mutable.Map[t1, t2]]
 
               def readVal2(using Quotes) =
-                genReadVal(tpe2 :: types, genNullValue[t2](tpe2 :: types), isStringified, false, in)
+                genReadVal(owner, tpe2 :: types, genNullValue[t2](tpe2 :: types), isStringified, false, in)
 
               if (cfg.mapAsArray) {
-                val readVal1 = genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+                val readVal1 = genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
                 genReadMapAsArray(newBuilder,
                   x => Update('{ $x.update($readVal1, { if ($in.isNextToken(',')) $readVal2 else $in.commaError() }) }),
                   identity, in, tDefault).asExprOf[T]
@@ -2164,11 +2167,11 @@ object JsonCodecMaker {
                 else builderNoApply).asExprOf[mutable.Builder[(t1, t2), T & collection.Map[t1, t2]]]
 
               def readVal2(using Quotes) =
-                genReadVal(tpe2 :: types, genNullValue[t2](tpe2 :: types), isStringified, false, in)
+                genReadVal(owner, tpe2 :: types, genNullValue[t2](tpe2 :: types), isStringified, false, in)
 
               if (cfg.mapAsArray) {
                 def readVal1(using Quotes) =
-                  genReadVal(tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
+                  genReadVal(owner, tpe1 :: types, genNullValue[t1](tpe1 :: types), isStringified, false, in)
 
                 def readKV(using Quotes)(x: Expr[mutable.Builder[(t1, t2), collection.Map[t1, t2]]]) =
                   Update('{ $x.addOne(($readVal1, { if ($in.isNextToken(',')) $readVal2 else $in.commaError() }))})
@@ -2370,13 +2373,13 @@ object JsonCodecMaker {
           indexedTypes.foreach { case (te, i) =>
             te.asType match
               case '[t] =>
-                val sym = symbol("_r" + (i + 1), te)
+                val sym = symbolWithOwner(owner, "_r" + (i + 1), te)
                 val nullVal = genNullValue[t](te :: types)
                 val rhs =
-                  if (i == 0) genReadVal(te :: types, nullVal, isStringified, false, in)
+                  if (i == 0) genReadVal(owner, te :: types, nullVal, isStringified, false, in)
                   else '{
                     if ($in.isNextToken(',')) {
-                      ${genReadVal(te :: types, nullVal, isStringified, false, in)}
+                      ${genReadVal(owner, te :: types, nullVal, isStringified, false, in)}
                     } else $in.commaError()
                   }
                 valDefs.addOne(ValDef(sym, Some(rhs.asTerm.changeOwner(sym))))
@@ -2821,6 +2824,7 @@ object JsonCodecMaker {
       
       // val codecDef: Term = codecDefExpr.asTerm
       
+      // TODO: set correct owners
       def needDefs =
         mathContexts.values ++
           nullValues.values ++
@@ -2856,7 +2860,7 @@ object JsonCodecMaker {
         val sym = cls.declaredMethod("decodeValue").head //Symbol.newMethod(Symbol.spliceOwner, "decodeValue", mt)
         val defdef = DefDef(sym, params => {
           val List(List(in, default)) = params
-          Some(genReadVal(rootTpe :: Nil, default.asExprOf[A], cfg.isStringified, false, in.asExprOf[JsonReader]).asTerm)
+          Some(genReadVal(cls, rootTpe :: Nil, default.asExprOf[A], cfg.isStringified, false, in.asExprOf[JsonReader]).asTerm)
         })
         defdef // .changeOwner(cls)
       }
@@ -2866,8 +2870,9 @@ object JsonCodecMaker {
         val sym = cls.declaredMethod("encodeValue").head // Symbol.newMethod(Symbol.spliceOwner, "encodeValue", mt) // Symbol.spliceOwner
         val defdef = DefDef(sym, params => {
           val List(List(x, out)) = params
+          // x.deepChangeOwner
           // x owner is wrong :/ 
-          // Some(genWriteVal(x.changeOwner(sym).asExprOf[A], rootTpe :: Nil, cfg.isStringified, None, out.changeOwner(sym).asExprOf[JsonWriter]).asTerm)
+          // Some(genWriteVal(x.asExprOf[A], rootTpe :: Nil, cfg.isStringified, None, out.changeOwner(sym).asExprOf[JsonWriter]).asTerm)
           None
         })
         defdef // .changeOwner(cls)
