@@ -2821,7 +2821,7 @@ object JsonCodecMaker {
       
       // val codecDef: Term = codecDefExpr.asTerm
       
-      val needDefs =
+      def needDefs =
         mathContexts.values ++
           nullValues.values ++
           equalsMethods.values ++
@@ -2833,6 +2833,7 @@ object JsonCodecMaker {
 
       val className = "$anon()"
       val parents   = List(TypeTree.of[Object], TypeTree.of[JsonValueCodec[A]])
+      // Q: do we need it even?
       val decls: List[Symbol] => Symbol => List[Symbol] = memberSymbolsAsSeen[JsonValueCodec[A]]
 
       val cls = Symbol.newClass(Symbol.spliceOwner, className, parents = parents.map(_.tpe), decls(needDefs.toList.map(_.symbol)), selfType = None)
@@ -2865,27 +2866,31 @@ object JsonCodecMaker {
         val sym = cls.declaredMethod("encodeValue").head // Symbol.newMethod(Symbol.spliceOwner, "encodeValue", mt) // Symbol.spliceOwner
         val defdef = DefDef(sym, params => {
           val List(List(x, out)) = params
-          //Some(genWriteVal(x.asExprOf[A], rootTpe :: Nil, cfg.isStringified, None, out.asExprOf[JsonWriter]).asTerm)
+          // x owner is wrong :/ 
+          // Some(genWriteVal(x.changeOwner(sym).asExprOf[A], rootTpe :: Nil, cfg.isStringified, None, out.changeOwner(sym).asExprOf[JsonWriter]).asTerm)
           None
         })
         defdef // .changeOwner(cls)
       }
 
-      def inDefs = nvDef :: rvDef :: wvDef :: Nil
+      val inDefs = nvDef :: rvDef :: wvDef :: Nil
 
-      println("-------")
+      // println("-------")
       // println(wvDef.show)
-      // println(inDefs.map(_.show))
-      println("-------")
+      // actualy
+      // inDefs.map(_.show)
+      // needDefs.map(_.show)
+      // println("-------")
 
       // cls.body
+
       val clsDef = ClassDef(cls, parents, body = needDefs.toList ::: inDefs) //  ::: inDefs
       val newCls = Typed(Apply(Select(New(TypeIdent(cls)), cls.primaryConstructor), Nil), TypeTree.of[JsonValueCodec[A]])
       val expr   = Block(List(clsDef), newCls).asExprOf[JsonValueCodec[A]]
 
-      println("------")
-      println(expr.show)
-      println("------")
+      // println("------")
+      // println(expr.show)
+      // println("------")
 
       // println("------")
       // println(expr.show)
