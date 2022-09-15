@@ -2810,17 +2810,20 @@ object JsonCodecMaker {
 
           def encodeValue(x: A, out: JsonWriter): Unit =
             ${genWriteVal('x, rootTpe :: Nil, cfg.isStringified, None, 'out)}
+
+          Varargs(needDefs)
         }
       }.asTerm
-      val needDefs =
-        mathContexts.values ++
+
+      lazy val needDefs =
+        (mathContexts.values ++
           nullValues.values ++
           equalsMethods.values ++
           scala2EnumerationCaches.values ++
           fieldIndexAccessors.values ++
           decodeMethodDefs.values ++
-          encodeMethodDefs.values
-      val codec = Block(needDefs.toList, codecDef).asExprOf[JsonValueCodec[A]]
+          encodeMethodDefs.values).toList
+      val codec = codecDef.asExprOf[JsonValueCodec[A]]
       if (//FIXME: uncomment after graduating from experimental API: CompilationInfo.XmacroSettings.contains("print-codecs") ||
         Expr.summon[CodecMakerConfig.PrintCodec].isDefined) {
         report.info(s"Generated JSON codec for type '${rootTpe.show}':\n${codec.show}", Position.ofMacroExpansion)
